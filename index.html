@@ -752,7 +752,7 @@ button.btn:disabled { opacity: .5; cursor: default; }
     } };
     function poll() {
       if (document.hidden || pending) return;
-      fetch('/api/state', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (d) {
+      fetch('/api/state', { cache: 'no-store' }).then(function (r) { if (!r.ok) { var er = new Error('http'); er.status = r.status; throw er; } return r.json(); }).then(function (d) {
         failed = 0;
         if (!d || typeof d.json !== 'string') { setSync('Edición compartida activa · en vivo'); return; }
         if (d.json === lastJson || pending) { setSync('Edición compartida activa · en vivo'); return; }
@@ -760,7 +760,7 @@ button.btn:disabled { opacity: .5; cursor: default; }
         try { localStorage.setItem(KEY, d.json); } catch (e) {}
         applyRemote(d.json);
         setSync('Edición compartida · actualizado ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      }).catch(function () { failed++; if (failed > 2) { shDoc = null; setSync('Sin conexión con el servidor: se guarda solo en este navegador'); } else { setSync('Reconectando…'); } });
+      }).catch(function (e) { failed++; if (failed > 2) { shDoc = null; setSync('Sin conexión con el servidor (error ' + (e && e.status || 'red') + '): se guarda solo en este navegador'); } else { setSync('Reconectando…'); } });
     }
     poll(); setInterval(poll, 2000);
   })();
