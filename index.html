@@ -207,7 +207,7 @@ button.btn:disabled { opacity: .5; cursor: default; }
     { id: 'ruta',    name: 'Ruta de acceso',  sub: '',         color: '#bfbfbf', h: 0.1, v: 0, bld: false, max: 8 },
     { id: 'rambla',  name: 'Rambla',          sub: '',         color: '#c9e3b8', h: 0.2, v: 0, bld: false, max: 8 },
     { id: 'playa',   name: 'Playa',           sub: '',         color: '#ead9b5', h: 0.2, v: 0, bld: false, max: 4 },
-    { id: 'mar',     name: 'Mar Atlántico',   sub: '',         color: '#7bc7ed', h: 0,   v: 0, bld: false, max: 0, fixed: true }
+    { id: 'mar',     name: 'Mar Atlántico',   sub: '',         color: '#3f9bd9', h: 0,   v: 0, bld: false, max: 0, fixed: true }
   ];
   var IDX = {}; CLS.forEach(function (c, i) { c.cur = c.h; c.vis = true; c.n = 0; IDX[c.id] = i; });
   DATA.polys.forEach(function (p) { CLS[p[0]].n++; });
@@ -417,7 +417,7 @@ button.btn:disabled { opacity: .5; cursor: default; }
   function updateHeights() {
     meshes.forEach(function (m) {
       var c = CLS[m.userData.ci];
-      if (c.fixed) { m.scale.y = 3; m.position.y = -3.4; return; }
+      if (c.fixed) { m.scale.y = 0.3; m.position.y = -0.25; return; }
       m.scale.y = Math.max(heightOf(m.userData.i) * state.ex, 0.02);
     });
     placeLabels(); placeNums(); refreshVals(); refreshPick();
