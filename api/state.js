@@ -1,0 +1,35 @@
+// Guarda el estado compartido (alturas, etc.) en Upstash Redis, conectado desde Vercel > Storage.
+const URL_ = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+const TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+const KEY = 'mar-meseta-3d:estado';
+
+async function redis(cmd) {
+  const r = await fetch(URL_, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' },
+    body: JSON.stringify(cmd),
+  });
+  if (!r.ok) throw new Error('redis ' + r.status);
+  return (await r.json()).result;
+}
+
+module.exports = async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!URL_ || !TOKEN) return res.status(503).json({ error: 'Falta conectar la base de datos' });
+  try {
+    if (req.method === 'GET') {
+      const json = await redis(['GET', KEY]);
+      return res.status(200).json({ json: json || null });
+    }
+    if (req.method === 'POST') {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      if (!body || typeof body.json !== 'string' || body.json.length > 200000) return res.status(400).json({ error: 'bad' });
+      JSON.parse(body.json);
+      await redis(['SET', KEY, body.json]);
+      return res.status(200).json({ ok: true });
+    }
+    return res.status(405).end();
+  } catch (e) {
+    return res.status(500).json({ error: 'server' });
+  }
+};

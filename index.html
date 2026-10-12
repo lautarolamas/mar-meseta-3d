@@ -1,0 +1,780 @@
+<title>Mar y Meseta 3D</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Work+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: visor 3D a la izquierda; a la derecha el panel con el bloque elegido arriba, los usos después y el modelo al final. En pantallas angostas el panel pasa debajo del visor. */
+:root {
+  --bg: #edf0f3;
+  --panel: #f8f9fb;
+  --ink: #19212c;
+  --muted: #5b6674;
+  --line: #d2d8df;
+  --accent: #0e6b66;
+  --accent-ink: #ffffff;
+  --scene-bg: #dde3e9;
+  --ground: #f4f6f8;
+  --edge: #19212c;
+  --font-ui: 'Work Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10151b; --panel: #171e26; --ink: #e5e9ee; --muted: #93a0ae; --line: #2a3440;
+    --accent: #4fc3b8; --accent-ink: #08201e; --scene-bg: #0d1217; --ground: #232b34; --edge: #e5e9ee;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10151b; --panel: #171e26; --ink: #e5e9ee; --muted: #93a0ae; --line: #2a3440;
+  --accent: #4fc3b8; --accent-ink: #08201e; --scene-bg: #0d1217; --ground: #232b34; --edge: #e5e9ee;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; line-height: 1.45; }
+*, *::before, *::after { box-sizing: border-box; }
+.app { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 22rem; grid-template-rows: auto minmax(0, 1fr); gap: 0 16px; padding-inline: 16px; padding-block: 14px 16px; }
+header.bar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px 20px; padding-bottom: 12px; }
+h1 { margin: 0; font-size: 1.35rem; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+.sub { margin: 2px 0 0; color: var(--muted); font-family: var(--font-mono); font-size: 0.78rem; }
+.views { display: flex; gap: 6px; flex-wrap: wrap; }
+button, select { font: inherit; color: inherit; }
+.btn { background: var(--panel); border: 1px solid var(--line); color: var(--ink); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 500; font-size: 0.85rem; }
+.btn:hover { border-color: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stage { position: relative; min-height: 26rem; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--scene-bg); }
+#view { position: absolute; inset: 0; }
+#view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.hint { position: absolute; left: 10px; bottom: 8px; margin: 0; font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); pointer-events: none; max-width: calc(100% - 20px); }
+.tip { position: absolute; z-index: 2; pointer-events: none; padding: 4px 8px; font-family: var(--font-mono); font-size: 0.75rem; background: var(--ink); color: var(--bg); border-radius: 3px; white-space: nowrap; transform: translate(12px, 12px); }
+.fail { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+.panel { min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 18px; overflow: auto; }
+.panel h2 { margin: 0 0 8px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+.lead { margin: 0 0 10px; color: var(--muted); font-size: 0.85rem; }
+.uses { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.use-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 2px 10px; padding: 9px 0; border-top: 1px solid var(--line); }
+.use-row:first-child { border-top: 0; padding-top: 0; }
+.use-row input[type="range"] { grid-column: 1 / -1; width: 100%; margin: 2px 0 0; accent-color: var(--accent); }
+.sw { display: inline-block; width: 18px; height: 18px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.35); background: var(--c); }
+.sw.hatch { background: repeating-linear-gradient(135deg, #f0fb65 0 4px, #ee7fb8 4px 6px); }
+.use-row .nm { font-weight: 500; line-height: 1.2; }
+.use-row .nm small { display: block; color: var(--muted); font-weight: 400; font-size: 0.76rem; }
+.val { font-family: var(--font-mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.chk { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.chk input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.ctl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; margin-bottom: 10px; }
+.ctl label { font-weight: 500; }
+.ctl input[type="range"] { grid-column: 1 / -1; width: 100%; margin: 2px 0 0; accent-color: var(--accent); }
+.toggles { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.pickrow { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.pickrow label { font-weight: 500; }
+select { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; }
+.pick { border: 1px dashed var(--line); border-radius: 4px; padding: 10px; min-height: 4.5rem; }
+.pick p { margin: 0; color: var(--muted); }
+.pick .ttl { color: var(--ink); font-weight: 500; margin-bottom: 6px; }
+.pick .row2 { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.note { margin: 0; font-size: 0.78rem; color: var(--muted); }
+button.btn:disabled { opacity: .5; cursor: default; }
+.exp { display: flex; flex-wrap: wrap; gap: 8px; }
+.shot { position: fixed; inset: 0; z-index: 20; background: rgba(10, 14, 18, 0.66); display: grid; place-items: center; padding: 16px; }
+.shot-card { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; width: min(1100px, 100%); max-height: 100%; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.shot-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.shot figure { margin: 0 0 14px; }
+.shot img { width: 100%; height: auto; display: block; border: 1px solid var(--line); background: #fff; }
+.shot .cap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+@media (max-width: 860px) {
+  .app { height: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; }
+  .stage { min-height: 0; height: 62vh; max-height: 34rem; }
+  .panel { margin-top: 14px; overflow: visible; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div>
+      <h1>Bloques Mar y Meseta</h1>
+      <p class="sub" id="sub">Plano con leyenda · bloques independientes</p>
+    </div>
+    <div class="views">
+      <div class="views" role="group" aria-label="Vistas">
+        <button class="btn" type="button" data-view="persp" aria-pressed="true">Perspectiva</button>
+        <button class="btn" type="button" data-view="plan" aria-pressed="false">Planta</button>
+        <button class="btn" type="button" data-view="coast" aria-pressed="false">Desde el mar</button>
+      </div>
+      <button class="btn" type="button" id="exp-all">Exportar imágenes</button>
+    </div>
+  </header>
+
+  <div class="stage">
+    <div id="view" aria-label="Modelo 3D de los bloques. Arrastrá para girar."></div>
+    <div class="tip" id="tip" hidden></div>
+    <p class="hint">Arrastrá para girar · rueda o pellizco para acercar · clic derecho para mover · clic en un bloque para elegirlo · Shift + clic suma bloques</p>
+  </div>
+
+  <aside class="panel" aria-label="Alturas por bloque y por uso">
+    <section>
+      <h2>Bloque seleccionado</h2>
+      <p class="lead">Cada bloque es independiente: elegilo y dale su propia altura, aunque sea del mismo uso que otro.</p>
+      <div class="pickrow">
+        <label for="blk">Elegir bloque por número</label>
+        <select id="blk"><option value="">Ninguno</option></select>
+      </div>
+      <div class="pick" id="pick"></div>
+    </section>
+
+    <section>
+      <h2>Altura base por uso</h2>
+      <p class="lead">Vale para todos los bloques de ese uso que no tengan altura propia.</p>
+      <ul class="uses" id="uses"></ul>
+    </section>
+
+    <section>
+      <h2>Exportar imagen</h2>
+      <p class="lead">Genera la imagen con las alturas que tengas ahora, fondo blanco y 2400 × 1350 px. Para ver los números de bloque en la imagen, activá "Numerar bloques" antes.</p>
+      <div class="exp">
+        <button class="btn" type="button" data-exp="persp">Perspectiva</button>
+        <button class="btn" type="button" data-exp="plan">Planta</button>
+        <button class="btn" type="button" data-exp="coast">Desde el mar</button>
+        <button class="btn" type="button" data-exp="cur">Vista actual</button>
+        <button class="btn" type="button" data-exp="all">Las tres vistas</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Modelo</h2>
+      <div class="ctl">
+        <label for="scale">Metros por píxel del plano</label><output class="val" id="scale-v"></output>
+        <input type="range" id="scale" min="0.4" max="3" step="0.05" value="1">
+      </div>
+      <div class="ctl">
+        <label for="varf">Variación al azar entre bloques</label><output class="val" id="varf-v"></output>
+        <input type="range" id="varf" min="0" max="2" step="0.1" value="0">
+      </div>
+      <div class="ctl">
+        <label for="ex">Extrusión</label><output class="val" id="ex-v"></output>
+        <input type="range" id="ex" min="0" max="1.5" step="0.05" value="1">
+      </div>
+      <div class="ctl">
+        <label for="sun">Orientación del sol</label><output class="val" id="sun-v"></output>
+        <input type="range" id="sun" min="0" max="359" step="1" value="235">
+      </div>
+      <div class="toggles">
+        <label class="chk"><input type="checkbox" id="t-shadow" checked> Sombras</label>
+        <label class="chk"><input type="checkbox" id="t-edge" checked> Aristas</label>
+        <label class="chk"><input type="checkbox" id="t-label" checked> Etiquetas</label>
+        <label class="chk"><input type="checkbox" id="t-num"> Numerar bloques</label>
+      </div>
+      <div class="exp" style="margin-top:12px"><button class="btn" type="button" id="reseed">Re-sortear la variación</button><button class="btn" type="button" id="reset">Restablecer alturas</button>
+<p class="cap" id="sync" aria-live="polite"></p></div>
+    </section>
+
+    <p class="note">Los usos salen de la leyenda del plano. La escala real es un supuesto (1 píxel = 1 m por defecto): corregila arriba. Tus alturas se guardan en este navegador y vuelven cuando reabrís la página. Los números de bloque son los mismos que llevan los archivos 3D.</p>
+  </aside>
+</div>
+
+<div class="shot" id="shot" hidden role="dialog" aria-modal="true" aria-label="Imágenes exportadas">
+  <div class="shot-card">
+    <div class="shot-head"><strong id="shot-title">Imágenes listas</strong><button class="btn" type="button" id="shot-close">Cerrar</button></div>
+    <p class="note">Para guardar: clic derecho sobre la imagen y "Guardar imagen como…". En el celular, mantené apretada la imagen. Si tu navegador no lo permite, usá "Copiar imagen" o una captura de pantalla.</p>
+    <div id="shot-list"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+  var DATA = {"cx":480,"cy":256,"bounds":[2,18,959,495],"order":["res_a","res_b","com_a","com_b","equip","educ","salud","indus","hoteles","verde","bulevar","ruta","rambla","playa","mar"],"polys":[[4,[5,19,108,19,108,87,5,87]],[11,[0,93,114,93,114,112,0,112]],[4,[122,19,187,19,187,121,122,121]],[1,[188,19,235,19,235,121,188,121]],[0,[250,19,309,19,309,121,250,121]],[0,[324,19,382,19,382,121,324,121]],[0,[397,19,491,19,491,121,397,121]],[2,[492,19,539,19,539,121,492,121]],[8,[569,19,563,25,563,123,636,123,640,119,640,115,637,110,631,81,624,62,620,59,595,20]],[1,[5,137,48,137,48,228,5,228]],[1,[63,137,108,137,108,228,63,228]],[2,[122,136,235,136,235,228,122,228]],[9,[249,136,300,136,300,186,249,186]],[0,[250,186,250,208,381,208,381,137,301,137,300,186]],[0,[447,137,397,137,397,208,437,208,437,146,446,141]],[8,[439,137,506,137,506,209,439,209]],[9,[507,136,539,136,539,209,507,209]],[8,[630,137,570,137,564,143,563,208,573,212,577,218,580,218,599,199,608,181,608,176,611,174,620,155,620,151]],[0,[647,143,645,143,637,153,632,162,635,167,626,175,625,180,634,178,651,160,650,154,647,153]],[10,[5,252,512,252,512,245,517,244,517,239,5,239]],[3,[122,264,235,264,235,295,122,295]],[3,[250,210,383,210,383,228,250,228]],[3,[397,227,516,227,518,224,523,226,530,218,537,215,537,213,532,214,531,210,397,210]],[11,[545,213,534,218,534,220,529,222,523,229,519,240,519,251,523,262,528,268,544,277,556,277,564,274,565,271,568,271,578,262,581,255,580,233,578,229,574,228,572,223,568,222,568,219,565,219,556,213],[[539,229,557,228,563,233,567,234,568,252,562,260,557,263,540,263,539,260,533,255,533,239]]],[9,[547,229,539,233,534,241,534,249,536,254,542,260,547,262,556,261,565,254,566,240,565,237,557,230]],[9,[630,181,619,186,597,208,594,220,591,250,595,278,599,287,622,309,626,311,638,311,665,304,674,298,684,271,684,223,677,202,671,191,660,186]],[12,[612,19,644,68,678,200,685,219,686,230,688,230,688,201,701,200,705,209,724,280,724,289,704,290,704,295,731,392,730,460,718,494,743,494,757,458,758,393,670,67,637,19]],[13,[641,19,675,69,675,77,761,393,760,458,747,494,802,494,812,467,811,397,801,323,776,264,770,228,695,20]],[4,[693,202,693,208,690,209,690,288,722,289,723,284,701,203]],[14,[698,19,706,47,775,237,778,265,803,325,813,395,814,468,805,494,961,494,961,19]],[7,[5,264,108,264,108,347,5,347]],[1,[122,296,235,296,235,348,122,348]],[3,[250,264,250,347,382,346,382,264],[[263,277,370,277,370,335,263,335]]],[0,[265,279,367,279,367,332,265,332]],[3,[397,264,398,347,538,346,538,282,535,281,537,276,529,272,523,264,521,264,520,267,518,267,517,264],[[410,277,526,277,526,335,410,335]]],[0,[413,279,523,279,523,332,413,332]],[8,[564,277,563,350,664,349,664,345,650,338,628,320,619,309,600,292,594,281,585,272,579,271,578,267,576,267]],[8,[682,281,678,298,671,305,653,309,648,314,648,317,673,334,696,343,699,340,699,334,688,299,685,282]],[1,[5,363,48,363,48,422,5,422]],[1,[63,363,108,363,108,422,63,422]],[1,[122,363,171,363,171,422,122,422]],[1,[185,363,235,363,235,422,185,422]],[0,[250,363,309,363,309,422,250,422]],[0,[324,363,383,363,383,422,324,422]],[0,[397,363,483,363,483,422,397,422]],[1,[5,437,48,437,48,495,5,495]],[5,[63,437,108,437,108,495,63,495]],[6,[122,437,171,437,171,495,122,495]],[1,[185,437,235,437,235,495,185,495]],[0,[250,437,309,437,309,495,250,495]],[0,[324,437,383,437,383,495,324,495]],[0,[397,437,483,437,483,495,397,495]],[9,[497,363,539,363,539,495,497,495]],[8,[563,363,716,363,716,495,563,495]]]};
+  var CX = DATA.cx, CY = DATA.cy, B = DATA.bounds;
+
+  /* h = altura base (m), v = variación máxima al azar (m), bld = la variación se redondea a pisos de 3 m */
+  var CLS = [
+    { id: 'res_a',   name: 'Residencia',      sub: 'amarillo', color: '#f0fb65', h: 9,   v: 3, bld: true,  max: 60 },
+    { id: 'res_b',   name: 'Residencia',      sub: 'crema',    color: '#fafcc7', h: 6,   v: 3, bld: true,  max: 60 },
+    { id: 'com_a',   name: 'Comercio',        sub: 'rojo',     color: '#b8312a', h: 18,  v: 6, bld: true,  max: 90 },
+    { id: 'com_b',   name: 'Comercio',        sub: 'salmón',   color: '#ee8a7e', h: 12,  v: 6, bld: true,  max: 90 },
+    { id: 'equip',   name: 'Equipamiento',    sub: '',         color: '#2d3a87', h: 12,  v: 3, bld: true,  max: 60 },
+    { id: 'educ',    name: 'Educación',       sub: '',         color: '#5c8de7', h: 9,   v: 3, bld: true,  max: 60 },
+    { id: 'salud',   name: 'Salud',           sub: '',         color: '#b7c9e7', h: 12,  v: 3, bld: true,  max: 60 },
+    { id: 'indus',   name: 'Industria',       sub: '',         color: '#8352f2', h: 12,  v: 3, bld: true,  max: 60 },
+    { id: 'hoteles', name: 'Hoteles',         sub: '',         color: '#f0fb65', h: 15,  v: 6, bld: true,  max: 80, hatch: true },
+    { id: 'verde',   name: 'Espacios verdes', sub: '',         color: '#93ca7f', h: 0.5, v: 0, bld: false, max: 8 },
+    { id: 'bulevar', name: 'Bulevar',         sub: '',         color: '#2f6b34', h: 0.3, v: 0, bld: false, max: 8 },
+    { id: 'ruta',    name: 'Ruta de acceso',  sub: '',         color: '#bfbfbf', h: 0.1, v: 0, bld: false, max: 8 },
+    { id: 'rambla',  name: 'Rambla',          sub: '',         color: '#c9e3b8', h: 0.2, v: 0, bld: false, max: 8 },
+    { id: 'playa',   name: 'Playa',           sub: '',         color: '#ead9b5', h: 0.2, v: 0, bld: false, max: 4 },
+    { id: 'mar',     name: 'Mar Atlántico',   sub: '',         color: '#7bc7ed', h: 0,   v: 0, bld: false, max: 0, fixed: true }
+  ];
+  var IDX = {}; CLS.forEach(function (c, i) { c.cur = c.h; c.vis = true; c.n = 0; IDX[c.id] = i; });
+  DATA.polys.forEach(function (p) { CLS[p[0]].n++; });
+  var nameOf = function (c) { return c.name + (c.sub ? ' (' + c.sub + ')' : ''); };
+
+  var state = { scale: 1, varF: 0, ex: 1, seed: 7, sun: 235, shadows: true, edges: true, labels: true, nums: false, view: 'persp' };
+  var over = {};      // altura propia por bloque
+  var sel = [];       // bloques elegidos
+  var R = [];
+  var fmt = function (n, d) { return Number(n).toLocaleString('es-AR', { maximumFractionDigits: d == null ? 1 : d }); };
+  var hText = function (c, h) { return fmt(h) + ' m' + (c.bld ? ' · ' + fmt(h / 3, 0) + ' p.' : ''); };
+
+  function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function reseed() { var r = mulberry32(state.seed); R = DATA.polys.map(function () { return r(); }); }
+  function heightOf(i) {
+    if (over[i] != null) return over[i];
+    var c = CLS[DATA.polys[i][0]];
+    if (c.bld && c.v > 0 && state.varF > 0) {
+      var j = (2 * R[i] - 1) * c.v * state.varF;
+      var h = c.cur + Math.floor(j / 3 + 0.5) * 3;
+      return Math.max(h, Math.min(3, c.cur));
+    }
+    return c.cur;
+  }
+
+  /* ---------- guardado en este navegador ---------- */
+  var KEY = 'mar-meseta-3d-v1', DEF = { scale: 1, varF: 0, ex: 1, sun: 235, seed: 7 };
+  function loadSaved() {
+    try {
+      var raw = localStorage.getItem(KEY); if (!raw) return;
+      var s = JSON.parse(raw);
+      if (s.cur) CLS.forEach(function (c) { if (typeof s.cur[c.id] === 'number') c.cur = s.cur[c.id]; });
+      if (s.vis) CLS.forEach(function (c) { if (s.vis[c.id] === false) c.vis = false; });
+      if (s.over) Object.keys(s.over).forEach(function (k) { var i = +k; if (DATA.polys[i] && typeof s.over[k] === 'number') over[i] = s.over[k]; });
+      if (s.st) {
+        ['scale', 'varF', 'ex', 'sun', 'seed'].forEach(function (k) { if (typeof s.st[k] === 'number') state[k] = s.st[k]; });
+        ['shadows', 'edges', 'labels', 'nums'].forEach(function (k) { if (typeof s.st[k] === 'boolean') state[k] = s.st[k]; });
+      }
+    } catch (e) {}
+  }
+  var saveT = null, shDoc = null, lastJson = null, pending = false;
+  function snapshotJson() {
+    var s = { cur: {}, vis: {}, over: over, st: {} };
+    CLS.forEach(function (c) { s.cur[c.id] = c.cur; s.vis[c.id] = c.vis; });
+    ['scale', 'varF', 'ex', 'sun', 'seed', 'shadows', 'edges', 'labels', 'nums'].forEach(function (k) { s.st[k] = state[k]; });
+    return JSON.stringify(s);
+  }
+  function persist() {
+    clearTimeout(saveT); pending = true;
+    saveT = setTimeout(function () {
+      pending = false;
+      var j;
+      try { j = snapshotJson(); localStorage.setItem(KEY, j); } catch (e) {}
+      if (shDoc && j && j !== lastJson) {
+        lastJson = j;
+        try { shDoc.set({ json: j }).catch(function () { setSync('No se pudo guardar. Reintentando con el próximo cambio'); }); } catch (e) {}
+      }
+    }, 400);
+  }
+  function setSync(msg) { var el = document.getElementById('sync'); if (el) el.textContent = msg; }
+  loadSaved();
+
+  /* centro de cada bloque (px) */
+  var CEN = DATA.polys.map(function (p) {
+    var f = p[1], x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (var k = 0; k < f.length; k += 2) { x0 = Math.min(x0, f[k]); x1 = Math.max(x1, f[k]); y0 = Math.min(y0, f[k + 1]); y1 = Math.max(y1, f[k + 1]); }
+    return [(x0 + x1) / 2, (y0 + y1) / 2];
+  });
+
+  /* ---------- panel ---------- */
+  var usesEl = document.getElementById('uses');
+  var pickEl = document.getElementById('pick');
+  CLS.forEach(function (c) {
+    var li = document.createElement('li'); li.className = 'use-row';
+    var sw = '<span class="sw' + (c.hatch ? ' hatch' : '') + '" style="--c:' + c.color + '"></span>';
+    li.innerHTML =
+      '<label class="chk"><input type="checkbox" id="vis-' + c.id + '"' + (c.vis ? ' checked' : '') + ' aria-label="Mostrar ' + nameOf(c) + '">' + sw + '</label>' +
+      '<div class="nm">' + nameOf(c) + '<small>' + c.n + (c.n === 1 ? ' bloque' : ' bloques') + '</small></div>' +
+      '<output class="val" id="val-' + c.id + '"></output>' +
+      (c.fixed ? '' : '<input type="range" id="h-' + c.id + '" min="0" max="' + c.max + '" step="' + (c.max > 10 ? 0.5 : 0.1) + '" value="' + c.cur + '" aria-label="Altura base de ' + nameOf(c) + '">');
+    usesEl.appendChild(li);
+  });
+  var blkSel = document.getElementById('blk');
+  DATA.polys.forEach(function (p, i) {
+    if (CLS[p[0]].fixed) return;
+    var o = document.createElement('option'); o.value = String(i); o.textContent = 'Bloque ' + (i + 1) + ' · ' + nameOf(CLS[p[0]]);
+    blkSel.appendChild(o);
+  });
+  function syncControls() {
+    document.getElementById('scale').value = state.scale; document.getElementById('varf').value = state.varF;
+    document.getElementById('ex').value = state.ex; document.getElementById('sun').value = state.sun;
+    document.getElementById('t-shadow').checked = state.shadows; document.getElementById('t-edge').checked = state.edges;
+    document.getElementById('t-label').checked = state.labels; document.getElementById('t-num').checked = state.nums;
+  }
+  syncControls();
+  function valText(c) { return c.fixed ? 'nivel 0' : hText(c, c.cur); }
+  function refreshVals() {
+    CLS.forEach(function (c) { document.getElementById('val-' + c.id).textContent = valText(c); });
+    document.getElementById('scale-v').textContent = fmt(state.scale, 2) + ' m';
+    document.getElementById('varf-v').textContent = '×' + fmt(state.varF);
+    document.getElementById('ex-v').textContent = Math.round(state.ex * 100) + ' %';
+    document.getElementById('sun-v').textContent = state.sun + '°';
+    var w = (B[2] - B[0]) * state.scale, h = (B[3] - B[1]) * state.scale;
+    persist();
+    document.getElementById('sub').textContent = 'Plano con leyenda · ' + fmt(w, 0) + ' × ' + fmt(h, 0) + ' m · ' + DATA.polys.length + ' bloques';
+  }
+
+  /* ---------- escena ---------- */
+  var host = document.getElementById('view');
+  var renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+  } catch (e) {
+    host.innerHTML = '<div class="fail">Este navegador no pudo iniciar WebGL, así que el modelo 3D no se puede mostrar acá.</div>';
+    refreshVals(); renderPick();
+    return;
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  host.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(38, 1, 1, 50000);
+  var controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.dampingFactor = 0.08; controls.maxPolarAngle = Math.PI / 2 - 0.02;
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8c97a3, 0.72));
+  var sun = new THREE.DirectionalLight(0xffffff, 0.55);
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004;
+  scene.add(sun); scene.add(sun.target);
+
+  var groundMat = new THREE.MeshLambertMaterial({ color: 0xf4f6f8 });
+  var edgeMat = new THREE.LineBasicMaterial({ color: 0x19212c, transparent: true, opacity: 0.38 });
+  var pickMat = new THREE.MeshLambertMaterial({ color: 0xff8a1f });
+  var ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), groundMat);
+  ground.rotation.x = -Math.PI / 2; ground.position.y = -0.05; ground.receiveShadow = true;
+  scene.add(ground);
+  var world = new THREE.Group(); scene.add(world);
+  var labelGroup = new THREE.Group(); scene.add(labelGroup);
+  var numGroup = new THREE.Group(); scene.add(numGroup);
+
+  function stripeTexture() {
+    var c = document.createElement('canvas'); c.width = c.height = 64;
+    var g = c.getContext('2d'); g.fillStyle = '#f0fb65'; g.fillRect(0, 0, 64, 64);
+    g.strokeStyle = '#ee7fb8'; g.lineWidth = 5; g.beginPath();
+    [[0, 64, 64, 0], [-32, 32, 32, -32], [32, 96, 96, 32]].forEach(function (l) { g.moveTo(l[0], l[1]); g.lineTo(l[2], l[3]); });
+    g.stroke();
+    var t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t;
+  }
+  var stripe = stripeTexture();
+  var mats = CLS.map(function (c) { return new THREE.MeshLambertMaterial({ color: c.color }); });
+  var hatchTop = new THREE.MeshLambertMaterial({ map: stripe });
+  var meshes = [];
+
+  function build() {
+    var s = state.scale;
+    meshes.forEach(function (m) { m.geometry.dispose(); world.remove(m); });
+    meshes = [];
+    stripe.repeat.set(1 / (48 * s), 1 / (48 * s));
+    function path(ctor, f) {
+      for (var k = 0; k < f.length; k += 2) {
+        var x = (f[k] - CX) * s, y = -(f[k + 1] - CY) * s;
+        if (k === 0) ctor.moveTo(x, y); else ctor.lineTo(x, y);
+      }
+      return ctor;
+    }
+    DATA.polys.forEach(function (p, i) {
+      var ci = p[0], c = CLS[ci];
+      var sh = path(new THREE.Shape(), p[1]);
+      (p[2] || []).forEach(function (hf) { sh.holes.push(path(new THREE.Path(), hf)); });
+      var geo = new THREE.ExtrudeGeometry(sh, { depth: 1, bevelEnabled: false, steps: 1 });
+      geo.rotateX(-Math.PI / 2);
+      var base = c.hatch ? [hatchTop, mats[ci]] : mats[ci];
+      var mesh = new THREE.Mesh(geo, base);
+      mesh.userData = { i: i, ci: ci, base: base };
+      mesh.castShadow = c.bld; mesh.receiveShadow = !c.fixed;
+      if (!c.fixed) mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), edgeMat));
+      world.add(mesh); meshes.push(mesh);
+    });
+    var w = (B[2] - B[0]) * s, h = (B[3] - B[1]) * s;
+    ground.scale.set(w * 1.04, h * 1.04, 1);
+    ground.position.x = ((B[0] + B[2]) / 2 - CX) * s; ground.position.z = ((B[1] + B[3]) / 2 - CY) * s;
+    var ext = Math.max(w, h) * 0.62;
+    var sc = sun.shadow.camera; sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = 1; sc.far = ext * 6; sc.updateProjectionMatrix();
+    placeSun(); controls.minDistance = 15 * s; controls.maxDistance = Math.max(w, h) * 4;
+    applyVis(); paintSel(); updateHeights(); buildLabels(); buildNums();
+  }
+
+  function placeSun() {
+    var s = state.scale, d = Math.max(B[2] - B[0], B[3] - B[1]) * s * 1.1, a = state.sun * Math.PI / 180;
+    sun.position.set(Math.sin(a) * d * 0.7, d * 0.75, -Math.cos(a) * d * 0.7);
+    sun.target.position.set(0, 0, 0);
+  }
+
+  function applyVis() {
+    meshes.forEach(function (m) { m.visible = CLS[m.userData.ci].vis; });
+    edgeMat.visible = state.edges;
+    renderer.shadowMap.enabled = state.shadows;
+    sun.castShadow = state.shadows;
+    meshes.forEach(function (m) { (Array.isArray(m.material) ? m.material : [m.material]).forEach(function (mt) { mt.needsUpdate = true; }); });
+    groundMat.needsUpdate = true;
+    labelGroup.visible = state.labels;
+    numGroup.visible = state.nums;
+  }
+
+  function updateHeights() {
+    meshes.forEach(function (m) {
+      var c = CLS[m.userData.ci];
+      if (c.fixed) { m.scale.y = 3; m.position.y = -3.4; return; }
+      m.scale.y = Math.max(heightOf(m.userData.i) * state.ex, 0.02);
+    });
+    placeLabels(); placeNums(); refreshVals(); refreshPick();
+  }
+
+  /* ---------- etiquetas y numeración ---------- */
+  var T = { bg: '#dde3e9', ground: '#f4f6f8', edge: '#19212c', ink: '#19212c' };
+  var LABELS = [
+    { t: 'Ruta de acceso', x: 60, y: 103, cls: 'ruta' },
+    { t: 'Bulevar', x: 260, y: 246, cls: 'bulevar' },
+    { t: 'Playa', x: 775, y: 330, cls: 'playa' },
+    { t: 'Mar Atlántico', x: 860, y: 250, cls: 'mar' }
+  ];
+  var sprites = [], nums = [];
+  function textTex(text, w, h, px, ls) {
+    var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    var g = cv.getContext('2d');
+    g.font = '500 ' + px + 'px "DM Mono", ui-monospace, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineJoin = 'round'; g.lineWidth = px * 0.24; g.strokeStyle = T.bg; g.fillStyle = T.ink;
+    var t = ls ? text.toUpperCase().split('').join(' ') : text;
+    g.strokeText(t, w / 2, h / 2); g.fillText(t, w / 2, h / 2);
+    var tex = new THREE.CanvasTexture(cv); tex.anisotropy = 4; return tex;
+  }
+  function clearSprites(list, group) { list.forEach(function (sp) { sp.material.map.dispose(); sp.material.dispose(); group.remove(sp); }); list.length = 0; }
+  function buildLabels() {
+    clearSprites(sprites, labelGroup);
+    var s = state.scale;
+    LABELS.forEach(function (l) {
+      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTex(l.t, 640, 112, 38, true), depthTest: false, transparent: true }));
+      sp.scale.set(150 * s, 150 * s * 112 / 640, 1); sp.renderOrder = 10; sp.userData = l;
+      sp.position.set((l.x - CX) * s, 4, (l.y - CY) * s);
+      labelGroup.add(sp); sprites.push(sp);
+    });
+    placeLabels();
+  }
+  function placeLabels() {
+    sprites.forEach(function (sp) {
+      var ci = IDX[sp.userData.cls], top = 0;
+      if (!CLS[ci].fixed) {
+        DATA.polys.forEach(function (p, i) { if (p[0] === ci) top = Math.max(top, heightOf(i)); });
+        top *= state.ex;
+      }
+      sp.position.y = top + 5 * state.scale;
+    });
+  }
+  function buildNums() {
+    clearSprites(nums, numGroup);
+    if (!state.nums) return;
+    var s = state.scale;
+    DATA.polys.forEach(function (p, i) {
+      if (CLS[p[0]].fixed) return;
+      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTex(String(i + 1), 128, 64, 40, false), depthTest: false, transparent: true }));
+      sp.scale.set(30 * s, 15 * s, 1); sp.renderOrder = 11; sp.userData = { i: i };
+      sp.position.set((CEN[i][0] - CX) * s, 0, (CEN[i][1] - CY) * s);
+      numGroup.add(sp); nums.push(sp);
+    });
+    placeNums();
+  }
+  function placeNums() {
+    nums.forEach(function (sp) {
+      var i = sp.userData.i;
+      sp.visible = CLS[DATA.polys[i][0]].vis;
+      sp.position.y = heightOf(i) * state.ex + 3 * state.scale;
+    });
+  }
+
+  /* ---------- tema ---------- */
+  function applyTheme() {
+    var cs = getComputedStyle(document.documentElement);
+    var g = function (n) { return cs.getPropertyValue(n).trim(); };
+    T = { bg: g('--scene-bg') || T.bg, ground: g('--ground') || T.ground, edge: g('--edge') || T.edge, ink: g('--ink') || T.ink };
+    scene.background = new THREE.Color(T.bg);
+    groundMat.color.set(T.ground); edgeMat.color.set(T.edge);
+    if (sprites.length) buildLabels();
+    if (nums.length) buildNums();
+  }
+  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch (e) {}
+
+  /* ---------- vistas ---------- */
+  var reduce = false;
+  try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+  var tw = null;
+  function fitDist() {
+    var s = state.scale, w = (B[2] - B[0]) * s, h = (B[3] - B[1]) * s;
+    var k = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    return Math.max(w / (k * camera.aspect), h / k) * 1.08;
+  }
+  function setPressed(name) {
+    document.querySelectorAll('[data-view]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.view === name)); });
+  }
+  function setView(name, instant) {
+    state.view = name; setPressed(name);
+    var d = fitDist(), dir;
+    if (name === 'plan') dir = new THREE.Vector3(0, 1, 0.0008);
+    else if (name === 'coast') { dir = new THREE.Vector3(0.93, 0.3, 0.34); d *= 0.85; }
+    else { dir = new THREE.Vector3(-0.5, 0.62, 0.78); d *= 0.82; }
+    var pos = dir.normalize().multiplyScalar(d), tgt = new THREE.Vector3(0, 0, 0);
+    if (instant || reduce) { camera.position.copy(pos); controls.target.copy(tgt); controls.update(); tw = null; return; }
+    tw = { t0: performance.now(), dur: 650, p0: camera.position.clone(), q0: controls.target.clone(), p1: pos, q1: tgt };
+  }
+  document.querySelectorAll('[data-view]').forEach(function (b) { b.addEventListener('click', function () { setView(b.dataset.view, false); }); });
+  function focusOn(i) {
+    var m = meshes[i]; if (!m) return;
+    var c = new THREE.Box3().setFromObject(m).getCenter(new THREE.Vector3());
+    var off = camera.position.clone().sub(controls.target);
+    var p1 = c.clone().add(off);
+    if (reduce) { camera.position.copy(p1); controls.target.copy(c); controls.update(); return; }
+    tw = { t0: performance.now(), dur: 600, p0: camera.position.clone(), q0: controls.target.clone(), p1: p1, q1: c };
+  }
+
+  /* ---------- tamaño ---------- */
+  var fitted = false;
+  function resize() {
+    var w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    if (!fitted) { fitted = true; setView(state.view, true); }
+  }
+  new ResizeObserver(resize).observe(host);
+
+  /* ---------- selección ---------- */
+  var ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), tip = document.getElementById('tip');
+  function pickAt(ev) {
+    var r = renderer.domElement.getBoundingClientRect();
+    mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(mouse, camera);
+    var hits = ray.intersectObjects(meshes.filter(function (m) { return m.visible && !CLS[m.userData.ci].fixed; }), false);
+    return hits.length ? hits[0].object : null;
+  }
+  var moveQueued = false;
+  renderer.domElement.addEventListener('pointermove', function (ev) {
+    if (ev.pointerType !== 'mouse' || ev.buttons) { tip.hidden = true; return; }
+    if (moveQueued) return; moveQueued = true;
+    requestAnimationFrame(function () {
+      moveQueued = false;
+      var m = pickAt(ev);
+      if (!m) { tip.hidden = true; return; }
+      var i = m.userData.i, c = CLS[m.userData.ci];
+      tip.textContent = 'Bloque ' + (i + 1) + ' · ' + nameOf(c) + ' · ' + hText(c, heightOf(i));
+      var r = host.getBoundingClientRect();
+      tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; tip.hidden = false;
+    });
+  });
+  renderer.domElement.addEventListener('pointerleave', function () { tip.hidden = true; });
+  var down = null;
+  renderer.domElement.addEventListener('pointerdown', function (ev) { down = { x: ev.clientX, y: ev.clientY, t: performance.now() }; });
+  renderer.domElement.addEventListener('pointerup', function (ev) {
+    if (!down) return;
+    var moved = Math.hypot(ev.clientX - down.x, ev.clientY - down.y), dt = performance.now() - down.t; down = null;
+    if (moved > 5 || dt > 500 || ev.button !== 0) return;
+    var m = pickAt(ev), add = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+    if (!m) { if (!add) setSel([]); return; }
+    var i = m.userData.i;
+    if (add) { var k = sel.indexOf(i); setSel(k >= 0 ? sel.filter(function (v) { return v !== i; }) : sel.concat([i])); }
+    else setSel([i]);
+  });
+  function paintSel() {
+    meshes.forEach(function (m) { m.material = m.userData.base; });
+    sel.forEach(function (i) { var m = meshes[i]; if (m) m.material = Array.isArray(m.userData.base) ? [pickMat, pickMat] : pickMat; });
+  }
+  function setSel(arr) {
+    sel = arr; paintSel(); renderPick();
+    blkSel.value = sel.length === 1 ? String(sel[0]) : '';
+  }
+  blkSel.addEventListener('change', function () {
+    if (blkSel.value === '') { setSel([]); return; }
+    var i = parseInt(blkSel.value, 10); setSel([i]); focusOn(i);
+  });
+
+  function renderPick() {
+    if (!sel.length) {
+      pickEl.innerHTML = '<p>Todavía no elegiste ningún bloque. Hacé clic en uno del modelo o elegilo por número.</p>';
+      return;
+    }
+    var cids = {}; sel.forEach(function (i) { cids[DATA.polys[i][0]] = 1; });
+    var one = Object.keys(cids).length === 1;
+    var maxv = 30; sel.forEach(function (i) { maxv = Math.max(maxv, CLS[DATA.polys[i][0]].max); });
+    pickEl.innerHTML =
+      '<p class="ttl" id="pk-t"></p>' +
+      '<div class="ctl" style="margin:0"><label for="pk-h">Altura propia</label><output class="val" id="pk-v"></output>' +
+      '<input type="range" id="pk-h" min="0" max="' + maxv + '" step="0.5" value="0"></div>' +
+      '<div class="row2"><button class="btn" type="button" id="pk-m">− 1 piso</button><button class="btn" type="button" id="pk-p">+ 1 piso</button></div>' +
+      '<div class="row2">' + (one ? '<button class="btn" type="button" id="pk-same">Elegir todos los de este uso</button>' : '') +
+      '<button class="btn" type="button" id="pk-reset">Volver al valor del uso</button>' +
+      '<button class="btn" type="button" id="pk-clear">Soltar</button></div>';
+    document.getElementById('pk-h').addEventListener('input', function (e) {
+      var v = parseFloat(e.target.value); sel.forEach(function (i) { over[i] = v; }); updateHeights();
+    });
+    function step(d) { sel.forEach(function (i) { over[i] = Math.max(0, heightOf(i) + d); }); updateHeights(); }
+    document.getElementById('pk-m').addEventListener('click', function () { step(-3); });
+    document.getElementById('pk-p').addEventListener('click', function () { step(3); });
+    document.getElementById('pk-reset').addEventListener('click', function () { sel.forEach(function (i) { delete over[i]; }); updateHeights(); });
+    document.getElementById('pk-clear').addEventListener('click', function () { setSel([]); });
+    var same = document.getElementById('pk-same');
+    if (same) same.addEventListener('click', function () {
+      var ci = DATA.polys[sel[0]][0], all = [];
+      DATA.polys.forEach(function (p, i) { if (p[0] === ci) all.push(i); });
+      setSel(all);
+    });
+    refreshPick();
+  }
+  function refreshPick() {
+    if (!sel.length) return;
+    var hs = sel.map(heightOf), same = hs.every(function (h) { return h === hs[0]; });
+    var c0 = CLS[DATA.polys[sel[0]][0]];
+    document.getElementById('pk-t').textContent = sel.length === 1
+      ? 'Bloque ' + (sel[0] + 1) + ' · ' + nameOf(c0)
+      : sel.length + ' bloques elegidos (' + sel.slice(0, 8).map(function (i) { return i + 1; }).join(', ') + (sel.length > 8 ? '…' : '') + ')';
+    document.getElementById('pk-v').textContent = same ? hText(c0, hs[0]) : 'varias alturas';
+    var slider = document.getElementById('pk-h');
+    if (document.activeElement !== slider) slider.value = hs[0];
+    document.getElementById('pk-reset').hidden = !sel.some(function (i) { return over[i] != null; });
+  }
+
+  /* ---------- controles ---------- */
+  CLS.forEach(function (c) {
+    document.getElementById('vis-' + c.id).addEventListener('change', function (e) { c.vis = e.target.checked; applyVis(); updateHeights(); persist(); });
+    var r = document.getElementById('h-' + c.id);
+    if (r) r.addEventListener('input', function (e) { c.cur = parseFloat(e.target.value); updateHeights(); });
+  });
+  var scaleQueued = false;
+  document.getElementById('scale').addEventListener('input', function (e) {
+    var old = state.scale; state.scale = parseFloat(e.target.value);
+    var k = state.scale / old; camera.position.multiplyScalar(k); controls.target.multiplyScalar(k); tw = null;
+    if (scaleQueued) return; scaleQueued = true;
+    requestAnimationFrame(function () { scaleQueued = false; build(); });
+  });
+  document.getElementById('varf').addEventListener('input', function (e) { state.varF = parseFloat(e.target.value); updateHeights(); });
+  document.getElementById('ex').addEventListener('input', function (e) { state.ex = parseFloat(e.target.value); updateHeights(); });
+  document.getElementById('sun').addEventListener('input', function (e) { state.sun = parseInt(e.target.value, 10); placeSun(); refreshVals(); });
+  document.getElementById('t-shadow').addEventListener('change', function (e) { state.shadows = e.target.checked; applyVis(); persist(); });
+  document.getElementById('t-edge').addEventListener('change', function (e) { state.edges = e.target.checked; applyVis(); persist(); });
+  document.getElementById('t-label').addEventListener('change', function (e) { state.labels = e.target.checked; applyVis(); persist(); });
+  document.getElementById('t-num').addEventListener('change', function (e) { state.nums = e.target.checked; buildNums(); applyVis(); persist(); });
+  document.getElementById('reseed').addEventListener('click', function () { state.seed = (state.seed * 48271) % 2147483647; reseed(); updateHeights(); });
+
+  /* ---------- exportar imágenes ---------- */
+  var VIEWNAMES = { persp: 'Perspectiva', plan: 'Planta', coast: 'Desde el mar', cur: 'Vista actual' };
+  function capture(name) {
+    var W = 2400, H = 1350;
+    var sv = { pos: camera.position.clone(), tgt: controls.target.clone(), pr: renderer.getPixelRatio(), view: state.view };
+    tip.hidden = true; tw = null;
+    T = { bg: '#ffffff', ground: '#f1f3f5', edge: '#19212c', ink: '#19212c' };
+    scene.background = new THREE.Color(T.bg); groundMat.color.set(T.ground); edgeMat.color.set(T.edge);
+    buildLabels(); buildNums();
+    meshes.forEach(function (m) { m.material = m.userData.base; });
+    renderer.setPixelRatio(1); renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix();
+    if (name !== 'cur') setView(name, true);
+    renderer.render(scene, camera);
+    var url = renderer.domElement.toDataURL('image/png');
+    renderer.setPixelRatio(sv.pr);
+    camera.position.copy(sv.pos); controls.target.copy(sv.tgt); state.view = sv.view; setPressed(sv.view);
+    applyTheme(); paintSel(); resize(); controls.update();
+    return url;
+  }
+  function dataUrlToBlob(u) {
+    var p = u.split(','), mime = p[0].match(/:(.*?);/)[1], bin = atob(p[1]), n = bin.length, a = new Uint8Array(n);
+    while (n--) a[n] = bin.charCodeAt(n);
+    return new Blob([a], { type: mime });
+  }
+  function copyImg(url, btn) {
+    var msg = function (t) { var old = btn.textContent; btn.textContent = t; setTimeout(function () { btn.textContent = 'Copiar imagen'; }, 2200); };
+    try {
+      navigator.clipboard.write([new ClipboardItem({ 'image/png': dataUrlToBlob(url) })]).then(function () { msg('Copiada'); }, function () { msg('No se pudo copiar'); });
+    } catch (e) { msg('No se pudo copiar'); }
+  }
+  var shotEl = document.getElementById('shot'), shotList = document.getElementById('shot-list');
+  function showShots(items) {
+    shotList.innerHTML = '';
+    items.forEach(function (it) {
+      var f = document.createElement('figure'), im = new Image();
+      im.src = it.url; im.alt = 'Imagen del modelo: ' + it.label;
+      var cap = document.createElement('div'); cap.className = 'cap';
+      var sp = document.createElement('span'); sp.textContent = it.label + ' · 2400 × 1350 px'; cap.appendChild(sp);
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.textContent = 'Copiar imagen';
+      b.addEventListener('click', function () { copyImg(it.url, b); }); cap.appendChild(b);
+      var dl = document.createElement('a'); dl.className = 'btn'; dl.textContent = 'Descargar PNG'; dl.href = it.url;
+      dl.download = 'mar-meseta-' + it.label.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.png'; cap.appendChild(dl);
+      f.appendChild(im); f.appendChild(cap); shotList.appendChild(f);
+    });
+    document.getElementById('shot-title').textContent = items.length > 1 ? 'Imágenes listas' : 'Imagen lista';
+    shotEl.hidden = false; document.getElementById('shot-close').focus();
+  }
+  function exportViews(kind) {
+    var names = kind === 'all' ? ['persp', 'plan', 'coast'] : [kind], items = [];
+    try {
+      names.forEach(function (n) { items.push({ label: VIEWNAMES[n], url: capture(n) }); });
+    } catch (e) { return; }
+    showShots(items);
+  }
+  document.querySelectorAll('[data-exp]').forEach(function (b) { b.addEventListener('click', function () { exportViews(b.dataset.exp); }); });
+  document.getElementById('exp-all').addEventListener('click', function () { exportViews('all'); });
+  document.getElementById('shot-close').addEventListener('click', function () { shotEl.hidden = true; });
+  shotEl.addEventListener('click', function (e) { if (e.target === shotEl) shotEl.hidden = true; });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') shotEl.hidden = true; });
+
+  document.getElementById('reset').addEventListener('click', function () {
+    CLS.forEach(function (c) { c.cur = c.h; var r = document.getElementById('h-' + c.id); if (r) r.value = c.h; });
+    over = {}; state.varF = DEF.varF; document.getElementById('varf').value = state.varF;
+    updateHeights();
+    if (sel.length) { var keep = sel; setSel([]); setSel(keep); }
+  });
+
+
+  /* ---------- edición compartida ---------- */
+  function applyRemote(j) {
+    var s; try { s = JSON.parse(j); } catch (e) { return; }
+    over = {};
+    Object.keys(s.over || {}).forEach(function (k) { var i = +k; if (DATA.polys[i] && typeof s.over[k] === 'number') over[i] = s.over[k]; });
+    CLS.forEach(function (c) {
+      if (s.cur && typeof s.cur[c.id] === 'number') c.cur = s.cur[c.id];
+      if (s.vis) c.vis = s.vis[c.id] !== false;
+      var r = document.getElementById('h-' + c.id); if (r) r.value = c.cur;
+      document.getElementById('vis-' + c.id).checked = c.vis;
+    });
+    var oldScale = state.scale, oldSeed = state.seed;
+    if (s.st) {
+      ['scale', 'varF', 'ex', 'sun', 'seed'].forEach(function (k) { if (typeof s.st[k] === 'number') state[k] = s.st[k]; });
+      ['shadows', 'edges', 'labels', 'nums'].forEach(function (k) { if (typeof s.st[k] === 'boolean') state[k] = s.st[k]; });
+    }
+    syncControls();
+    if (state.scale !== oldScale || state.seed !== oldSeed) { build(); } else { applyVis(); }
+    updateHeights(); placeSun();
+    if (sel.length) { var keep = sel.slice(); setSel([]); setSel(keep); }
+  }
+  (function connectShared() {
+    var failed = 0;
+    shDoc = { set: function (o) {
+      return fetch('/api/state', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(o) })
+        .then(function (r) { if (!r.ok) throw new Error('http'); });
+    } };
+    function poll() {
+      if (document.hidden || pending) return;
+      fetch('/api/state', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (d) {
+        failed = 0;
+        if (!d || typeof d.json !== 'string') { setSync('Edición compartida activa · en vivo'); return; }
+        if (d.json === lastJson || pending) { setSync('Edición compartida activa · en vivo'); return; }
+        lastJson = d.json;
+        try { localStorage.setItem(KEY, d.json); } catch (e) {}
+        applyRemote(d.json);
+        setSync('Edición compartida · actualizado ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      }).catch(function () { failed++; if (failed > 2) { shDoc = null; setSync('Sin conexión con el servidor: se guarda solo en este navegador'); } else { setSync('Reconectando…'); } });
+    }
+    poll(); setInterval(poll, 2000);
+  })();
+
+  /* ---------- arranque ---------- */
+  reseed(); applyTheme(); build(); renderPick(); resize(); setView('persp', true);
+  (function loop(now) {
+    if (tw) {
+      var k = Math.min(1, ((now || performance.now()) - tw.t0) / tw.dur), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      camera.position.lerpVectors(tw.p0, tw.p1, e); controls.target.lerpVectors(tw.q0, tw.q1, e);
+      if (k >= 1) tw = null;
+    }
+    controls.update(); renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  })();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { buildLabels(); buildNums(); });
+})();
+</script>
