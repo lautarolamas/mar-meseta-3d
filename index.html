@@ -82,6 +82,8 @@ select { width: 100%; background: var(--bg); border: 1px solid var(--line); bord
 .note { margin: 0; font-size: 0.78rem; color: var(--muted); }
 button.btn:disabled { opacity: .5; cursor: default; }
 .exp { display: flex; flex-wrap: wrap; gap: 8px; }
+.exp-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-bottom: 10px; }
+.exp-list label { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; cursor: pointer; }
 [hidden] { display: none !important; }
 .shot { position: fixed; inset: 0; z-index: 20; background: rgba(10, 14, 18, 0.66); display: grid; place-items: center; padding: 16px; }
 .shot-card { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; width: min(1100px, 100%); max-height: 100%; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -112,6 +114,7 @@ button.btn:disabled { opacity: .5; cursor: default; }
         <button class="btn" type="button" data-view="persp" aria-pressed="true">Perspectiva</button>
         <button class="btn" type="button" data-view="plan" aria-pressed="false">Planta</button>
         <button class="btn" type="button" data-view="coast" aria-pressed="false">Desde el mar</button>
+        <select class="btn" id="more-views" aria-label="Más tomas"></select>
       </div>
       <button class="btn" type="button" id="exp-all">Exportar imágenes</button>
     </div>
@@ -142,13 +145,13 @@ button.btn:disabled { opacity: .5; cursor: default; }
 
     <section>
       <h2>Exportar imagen</h2>
-      <p class="lead">Genera la imagen con las alturas que tengas ahora, fondo blanco y 2400 × 1350 px. Para ver los números de bloque en la imagen, activá "Numerar bloques" antes.</p>
+      <p class="lead">Elegí las tomas que querés. Se generan con las alturas que tengas ahora, fondo blanco y 2400 × 1350 px. Para ver los números de bloque en la imagen, activá "Numerar bloques" antes.</p>
+      <div class="exp-list" id="exp-list" role="group" aria-label="Vistas a exportar"></div>
       <div class="exp">
-        <button class="btn" type="button" data-exp="persp">Perspectiva</button>
-        <button class="btn" type="button" data-exp="plan">Planta</button>
-        <button class="btn" type="button" data-exp="coast">Desde el mar</button>
+        <button class="btn" type="button" id="exp-sel">Generar las elegidas</button>
         <button class="btn" type="button" data-exp="cur">Vista actual</button>
-        <button class="btn" type="button" data-exp="all">Las tres vistas</button>
+        <button class="btn" type="button" id="exp-allv">Marcar todas</button>
+        <button class="btn" type="button" id="exp-none">Ninguna</button>
       </div>
     </section>
 
@@ -516,13 +519,34 @@ button.btn:disabled { opacity: .5; cursor: default; }
   }
   function setPressed(name) {
     document.querySelectorAll('[data-view]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.view === name)); });
+    var ms = document.getElementById('more-views'); if (ms) ms.value = ([].some.call(ms.options, function (o) { return o.value === name; })) ? name : '';
   }
+  var VIEWS = {
+    persp:   { label: 'Perspectiva',               dir: [-0.5, 0.62, 0.78], k: 0.82 },
+    plan:    { label: 'Planta',                    dir: [0, 1, 0.0008],     k: 1 },
+    coast:   { label: 'Desde el mar',              dir: [0.93, 0.3, 0.34],  k: 0.85 },
+    ne:      { label: 'Aérea desde el noreste',    dir: [0.75, 0.6, -0.55], k: 0.85 },
+    se:      { label: 'Aérea desde el sureste',    dir: [0.55, 0.55, 0.8],  k: 0.85 },
+    no:      { label: 'Aérea desde el noroeste',   dir: [-0.6, 0.6, -0.75], k: 0.85 },
+    alta:    { label: 'Aérea alta (casi cenital)', dir: [-0.15, 1, 0.55],   k: 0.9 },
+    norte:   { label: 'Frente norte (baja)',       dir: [0, 0.38, -1],      k: 0.8 },
+    sur:     { label: 'Frente sur (baja)',         dir: [0, 0.38, 1],       k: 0.8 },
+    oeste:   { label: 'Desde la ciudad (oeste)',   dir: [-1, 0.4, 0],       k: 0.85 },
+    rasante: { label: 'Rasante sobre la playa',    dir: [0.97, 0.13, 0.2],  k: 0.65 }
+  };
+  var moreSel = document.getElementById('more-views');
+  (function () {
+    var o = document.createElement('option'); o.value = ''; o.textContent = 'Más tomas…'; moreSel.appendChild(o);
+    Object.keys(VIEWS).forEach(function (k) {
+      if (k === 'persp' || k === 'plan' || k === 'coast') return;
+      var op = document.createElement('option'); op.value = k; op.textContent = VIEWS[k].label; moreSel.appendChild(op);
+    });
+    moreSel.addEventListener('change', function () { if (moreSel.value) setView(moreSel.value, false); });
+  })();
   function setView(name, instant) {
+    if (!VIEWS[name]) name = 'persp';
     state.view = name; setPressed(name);
-    var d = fitDist(), dir;
-    if (name === 'plan') dir = new THREE.Vector3(0, 1, 0.0008);
-    else if (name === 'coast') { dir = new THREE.Vector3(0.93, 0.3, 0.34); d *= 0.85; }
-    else { dir = new THREE.Vector3(-0.5, 0.62, 0.78); d *= 0.82; }
+    var V = VIEWS[name], d = fitDist() * V.k, dir = new THREE.Vector3(V.dir[0], V.dir[1], V.dir[2]);
     var pos = dir.normalize().multiplyScalar(d), tgt = new THREE.Vector3(0, 0, 0);
     if (instant || reduce) { camera.position.copy(pos); controls.target.copy(tgt); controls.update(); tw = null; return; }
     tw = { t0: performance.now(), dur: 650, p0: camera.position.clone(), q0: controls.target.clone(), p1: pos, q1: tgt };
@@ -664,7 +688,15 @@ button.btn:disabled { opacity: .5; cursor: default; }
   document.getElementById('reseed').addEventListener('click', function () { state.seed = (state.seed * 48271) % 2147483647; reseed(); updateHeights(); });
 
   /* ---------- exportar imágenes ---------- */
-  var VIEWNAMES = { persp: 'Perspectiva', plan: 'Planta', coast: 'Desde el mar', cur: 'Vista actual' };
+  var VIEWNAMES = { cur: 'Vista actual' };
+  Object.keys(VIEWS).forEach(function (k) { VIEWNAMES[k] = VIEWS[k].label; });
+  var expList = document.getElementById('exp-list');
+  Object.keys(VIEWS).forEach(function (k) {
+    var l = document.createElement('label'), c = document.createElement('input');
+    c.type = 'checkbox'; c.value = k; c.checked = (k === 'persp' || k === 'plan' || k === 'coast');
+    l.appendChild(c); l.appendChild(document.createTextNode(VIEWS[k].label)); expList.appendChild(l);
+  });
+  function setAllChecks(v) { expList.querySelectorAll('input').forEach(function (c) { c.checked = v; }); }
   function capture(name) {
     var W = 2400, H = 1350;
     var sv = { pos: camera.position.clone(), tgt: controls.target.clone(), pr: renderer.getPixelRatio(), view: state.view };
@@ -704,21 +736,25 @@ button.btn:disabled { opacity: .5; cursor: default; }
       var b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.textContent = 'Copiar imagen';
       b.addEventListener('click', function () { copyImg(it.url, b); }); cap.appendChild(b);
       var dl = document.createElement('a'); dl.className = 'btn'; dl.textContent = 'Descargar PNG'; dl.href = it.url;
-      dl.download = 'mar-meseta-' + it.label.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.png'; cap.appendChild(dl);
+      dl.download = 'mar-meseta-' + it.label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-') + '.png'; cap.appendChild(dl);
       f.appendChild(im); f.appendChild(cap); shotList.appendChild(f);
     });
     document.getElementById('shot-title').textContent = items.length > 1 ? 'Imágenes listas' : 'Imagen lista';
     shotEl.hidden = false; document.getElementById('shot-close').focus();
   }
   function exportViews(kind) {
-    var names = kind === 'all' ? ['persp', 'plan', 'coast'] : [kind], items = [];
+    var names = kind === 'sel' ? [].map.call(expList.querySelectorAll('input:checked'), function (c) { return c.value; }) : [kind], items = [];
+    if (!names.length) return;
     try {
       names.forEach(function (n) { items.push({ label: VIEWNAMES[n], url: capture(n) }); });
     } catch (e) { return; }
     showShots(items);
   }
   document.querySelectorAll('[data-exp]').forEach(function (b) { b.addEventListener('click', function () { exportViews(b.dataset.exp); }); });
-  document.getElementById('exp-all').addEventListener('click', function () { exportViews('all'); });
+  document.getElementById('exp-all').addEventListener('click', function () { exportViews('sel'); });
+  document.getElementById('exp-sel').addEventListener('click', function () { exportViews('sel'); });
+  document.getElementById('exp-allv').addEventListener('click', function () { setAllChecks(true); });
+  document.getElementById('exp-none').addEventListener('click', function () { setAllChecks(false); });
   document.getElementById('shot-close').addEventListener('click', function () { shotEl.hidden = true; });
   shotEl.addEventListener('click', function (e) { if (e.target === shotEl) shotEl.hidden = true; });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') shotEl.hidden = true; });
