@@ -31,4 +31,4 @@ Se configura en Vercel > Settings > Environment Variables (todas opcionales; se 
 Las cuotas gratuitas de cada proveedor cambian: conviene mirar sus páginas antes de depender de ellas.
 
 ## Editar bloques y eliminar planos
-En las tres pestañas, al elegir uno o varios bloques (clic, Shift + clic o por número) se puede cambiarles el color, pasarlos a otro uso (grupo), eliminarlos y volver a restaurarlos. Todo se comparte en vivo. En **Mapa 3** además está "Eliminar este plano", que borra la ciudad cargada para los tres.
+En las tres pestañas, al elegir uno o varios bloques (clic, Shift + clic o por número) se puede cambiarles el color, pasarlos a otro uso (grupo), escribirles una **categoría a mano** (Jardín, Universidad…), eliminarlos y volver a restaurarlos. Las categorías se ven como etiqueta sobre el bloque (se apagan con "Mostrar categorías"), tienen su propia lista en el panel y un color para toda la categoría. Todo se comparte en vivo. En **Mapa 3** además está "Eliminar este plano", que borra la ciudad cargada para los tres.
