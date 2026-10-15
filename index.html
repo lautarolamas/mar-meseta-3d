@@ -715,6 +715,7 @@ button.btn:disabled { opacity: .5; cursor: default; }
     applyTheme(); paintSel(); resize(); controls.update();
     return url;
   }
+  window.__shotApi = { capture: capture, names: VIEWNAMES };
   function dataUrlToBlob(u) {
     var p = u.split(','), mime = p[0].match(/:(.*?);/)[1], bin = atob(p[1]), n = bin.length, a = new Uint8Array(n);
     while (n--) a[n] = bin.charCodeAt(n);
@@ -824,3 +825,4 @@ button.btn:disabled { opacity: .5; cursor: default; }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { buildLabels(); buildNums(); });
 })();
 </script>
+<script src="render.js"></script>
