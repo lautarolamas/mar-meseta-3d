@@ -280,7 +280,7 @@ button.btn:disabled { opacity: .5; cursor: default; }
       }
     } catch (e) {}
   }
-  var saveT = null, shDoc = null, lastJson = null, pending = false;
+  var saveT = null, shDoc = null, lastJson = null, pending = false, inflight = 0, lastPost = 0;
   function snapshotJson() {
     var s = { cur: {}, vis: {}, over: over, st: {} };
     CLS.forEach(function (c) { s.cur[c.id] = c.cur; s.vis[c.id] = c.vis; });
@@ -296,10 +296,21 @@ button.btn:disabled { opacity: .5; cursor: default; }
       try { j = snapshotJson(); localStorage.setItem(KEY, j); } catch (e) {}
       if (shDoc && j && j !== lastJson) {
         lastJson = j;
-        try { shDoc.set({ json: j }).catch(function () { setSync('No se pudo guardar. Reintentando con el próximo cambio'); }); } catch (e) {}
+        try { inflight++; shDoc.set({ json: j }).then(function () { inflight--; lastPost = Date.now(); }, function () { inflight--; lastJson = null; setSync('No se pudo guardar. Reintentando con el próximo cambio'); }); } catch (e) { inflight--; }
       }
     }, 400);
   }
+  function flushNow() {
+    if (!pending) return;
+    clearTimeout(saveT); pending = false;
+    var j; try { j = snapshotJson(); localStorage.setItem(KEY, j); } catch (e) {}
+    if (shDoc && j && j !== lastJson) {
+      lastJson = j;
+      try { fetch('/api/state?map=b', { method: 'POST', keepalive: true, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ json: j }) }); } catch (e) {}
+    }
+  }
+  window.addEventListener('pagehide', flushNow);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) flushNow(); });
   function setSync(msg) { var el = document.getElementById('sync'); if (el) el.textContent = msg; }
   loadSaved();
 
@@ -924,9 +935,10 @@ button.btn:disabled { opacity: .5; cursor: default; }
         .then(function (r) { if (!r.ok) throw new Error('http'); });
     } };
     function poll() {
-      if (document.hidden || pending) return;
+      if (document.hidden || pending || inflight) return;
       fetch('/api/state?map=b', { cache: 'no-store' }).then(function (r) { if (!r.ok) { var er = new Error('http'); er.status = r.status; throw er; } return r.json(); }).then(function (d) {
         failed = 0;
+        if (pending || inflight || Date.now() - lastPost < 4000) return;
         if (!d || typeof d.json !== 'string') { setSync('Edición compartida activa · en vivo'); return; }
         if (d.json === lastJson || pending) { setSync('Edición compartida activa · en vivo'); return; }
         lastJson = d.json;
