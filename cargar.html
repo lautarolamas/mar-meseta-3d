@@ -143,6 +143,8 @@ button.btn:disabled { opacity: .5; cursor: default; }
       </div>
       <button class="btn" type="button" id="exp-all">Exportar imágenes</button>
       <button class="btn" type="button" id="newplan">Cargar otro plano</button>
+      <button class="btn" type="button" id="delplan">Eliminar este plano</button>
+      <span class="views" id="delconf" hidden><button class="btn" type="button" id="delyes" style="background:#b3261e;border-color:#b3261e;color:#fff">Sí, eliminarlo para los tres</button><button class="btn" type="button" id="delno">Cancelar</button></span>
     </div>
   </header>
 
@@ -183,6 +185,7 @@ button.btn:disabled { opacity: .5; cursor: default; }
         <select id="blk"><option value="">Ninguno</option></select>
       </div>
       <div class="pick" id="pick"></div>
+      <div class="exp" id="del-row" style="margin-top:8px" hidden><button class="btn" type="button" id="restore">Restaurar eliminados</button><span class="note" id="del-n"></span></div>
     </section>
 
     <section>
@@ -252,6 +255,21 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
 
   var IDX = {}; CLS.forEach(function (c, i) { c.cur = c.h; c.vis = true; c.n = 0; IDX[c.id] = i; });
   DATA.polys.forEach(function (p) { CLS[p[0]].n++; });
+  /* ediciones por bloque: eliminados, grupo (uso) y color propio */
+  var baseGrp = DATA.polys.map(function (p) { return p[0]; });
+  var del = {}, colOv = {}, colMats = {};
+  function recount() { CLS.forEach(function (c) { c.n = 0; }); DATA.polys.forEach(function (p, i) { if (!del[i]) CLS[p[0]].n++; }); }
+  function applyBlk(s) {
+    del = {}; colOv = {};
+    (s.del || []).forEach(function (i) { if (DATA.polys[i]) del[i] = 1; });
+    Object.keys(s.col || {}).forEach(function (k) { if (DATA.polys[k] && /^#[0-9a-f]{6}$/i.test(s.col[k])) colOv[k] = s.col[k]; });
+    DATA.polys.forEach(function (p, i) { var g = s.grp && s.grp[i]; p[0] = (typeof g === 'number' && CLS[g]) ? g : baseGrp[i]; });
+    recount();
+  }
+  function blkJson() {
+    var grp = {}; DATA.polys.forEach(function (p, i) { if (p[0] !== baseGrp[i]) grp[i] = p[0]; });
+    return { del: Object.keys(del).map(Number), grp: grp, col: colOv };
+  }
   var nameOf = function (c) { return c.name + (c.sub ? ' (' + c.sub + ')' : ''); };
 
   var state = { scale: DATA.s0 || 1, varF: 0, ex: 1, seed: 7, sun: 235, shadows: true, edges: true, labels: true, nums: false, view: 'persp' };
@@ -284,6 +302,7 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
       if (s.cur) CLS.forEach(function (c) { if (typeof s.cur[c.id] === 'number') c.cur = s.cur[c.id]; });
       if (s.vis) CLS.forEach(function (c) { if (s.vis[c.id] === false) c.vis = false; });
       if (s.over) Object.keys(s.over).forEach(function (k) { var i = +k; if (DATA.polys[i] && typeof s.over[k] === 'number') over[i] = s.over[k]; });
+      applyBlk(s);
       if (s.st) {
         ['scale', 'varF', 'ex', 'sun', 'seed'].forEach(function (k) { if (typeof s.st[k] === 'number') state[k] = s.st[k]; });
         ['shadows', 'edges', 'labels', 'nums'].forEach(function (k) { if (typeof s.st[k] === 'boolean') state[k] = s.st[k]; });
@@ -295,6 +314,7 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
     var s = { cid: CITYID, cur: {}, vis: {}, over: over, st: {} };
     CLS.forEach(function (c) { s.cur[c.id] = c.cur; s.vis[c.id] = c.vis; });
     ['scale', 'varF', 'ex', 'sun', 'seed', 'shadows', 'edges', 'labels', 'nums'].forEach(function (k) { s.st[k] = state[k]; });
+    var bj = blkJson(); s.del = bj.del; s.grp = bj.grp; s.col = bj.col;
     return JSON.stringify(s);
   }
   function persist() {
@@ -327,17 +347,29 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
     var sw = '<span class="sw' + (c.hatch ? ' hatch' : '') + '" style="--c:' + c.color + '"></span>';
     li.innerHTML =
       '<label class="chk"><input type="checkbox" id="vis-' + c.id + '"' + (c.vis ? ' checked' : '') + ' aria-label="Mostrar ' + nameOf(c) + '">' + sw + '</label>' +
-      '<div class="nm">' + nameOf(c) + '<small>' + c.n + (c.n === 1 ? ' bloque' : ' bloques') + '</small></div>' +
+      '<div class="nm">' + nameOf(c) + '<small id="n-' + c.id + '">' + (c.n + (c.n === 1 ? ' bloque' : ' bloques')) + '</small></div>' +
       '<output class="val" id="val-' + c.id + '"></output>' +
       (c.fixed ? '' : '<input type="range" id="h-' + c.id + '" min="0" max="' + c.max + '" step="' + (c.max > 10 ? 0.5 : 0.1) + '" value="' + c.cur + '" aria-label="Altura base de ' + nameOf(c) + '">');
     usesEl.appendChild(li);
   });
   var blkSel = document.getElementById('blk');
-  DATA.polys.forEach(function (p, i) {
-    if (CLS[p[0]].fixed) return;
-    var o = document.createElement('option'); o.value = String(i); o.textContent = 'Bloque ' + (i + 1) + ' · ' + nameOf(CLS[p[0]]);
-    blkSel.appendChild(o);
-  });
+  function fillBlk() {
+    var keep = blkSel.value; blkSel.innerHTML = '<option value="">Ninguno</option>';
+    DATA.polys.forEach(function (p, i) {
+      if (CLS[p[0]].fixed || del[i]) return;
+      var o = document.createElement('option'); o.value = String(i); o.textContent = 'Bloque ' + (i + 1) + ' · ' + nameOf(CLS[p[0]]);
+      blkSel.appendChild(o);
+    });
+    blkSel.value = keep;
+  }
+  fillBlk();
+  var cntText = function (c) { return c.n + (c.n === 1 ? ' bloque' : ' bloques'); };
+  function refreshCounts() {
+    CLS.forEach(function (c) { var e = document.getElementById('n-' + c.id); if (e) e.textContent = cntText(c); });
+    var nd = Object.keys(del).length, row = document.getElementById('del-row');
+    if (row) { row.hidden = !nd; document.getElementById('del-n').textContent = nd + (nd === 1 ? ' bloque eliminado' : ' bloques eliminados'); }
+  }
+  refreshCounts();
   function syncControls() {
     document.getElementById('scale').value = state.scale; document.getElementById('varf').value = state.varF;
     document.getElementById('ex').value = state.ex; document.getElementById('sun').value = state.sun;
@@ -355,7 +387,7 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
     document.getElementById('sun-v').textContent = state.sun + '°';
     var w = (B[2] - B[0]) * state.scale, h = (B[3] - B[1]) * state.scale;
     persist();
-    document.getElementById('sub').textContent = 'Plano propio · ' + fmt(w, 0) + ' × ' + fmt(h, 0) + ' m · ' + DATA.polys.length + ' bloques';
+    document.getElementById('sub').textContent = 'Plano propio · ' + fmt(w, 0) + ' × ' + fmt(h, 0) + ' m · ' + (DATA.polys.length - Object.keys(del).length) + ' bloques';
   }
 
   /* ---------- escena ---------- */
@@ -406,6 +438,12 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
   var hatchTop = new THREE.MeshLambertMaterial({ map: stripe });
   var meshes = [];
 
+  function colMat(hex) { return colMats[hex] || (colMats[hex] = new THREE.MeshLambertMaterial({ color: hex })); }
+  function baseMat(i, ci, c) { if (colOv[i]) return colMat(colOv[i]); return c.hatch ? [hatchTop, mats[ci]] : mats[ci]; }
+  function applyColors() {
+    meshes.forEach(function (m) { m.userData.base = baseMat(m.userData.i, m.userData.ci, CLS[m.userData.ci]); });
+    paintSel();
+  }
   function build() {
     var s = state.scale;
     meshes.forEach(function (m) { m.geometry.dispose(); world.remove(m); });
@@ -424,7 +462,7 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
       (p[2] || []).forEach(function (hf) { sh.holes.push(path(new THREE.Path(), hf)); });
       var geo = new THREE.ExtrudeGeometry(sh, { depth: 1, bevelEnabled: false, steps: 1 });
       geo.rotateX(-Math.PI / 2);
-      var base = c.hatch ? [hatchTop, mats[ci]] : mats[ci];
+      var base = baseMat(i, ci, c);
       var mesh = new THREE.Mesh(geo, base);
       mesh.userData = { i: i, ci: ci, base: base };
       mesh.castShadow = c.bld; mesh.receiveShadow = !c.fixed;
@@ -447,7 +485,7 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
   }
 
   function applyVis() {
-    meshes.forEach(function (m) { m.visible = CLS[m.userData.ci].vis; });
+    meshes.forEach(function (m) { m.visible = CLS[m.userData.ci].vis && !del[m.userData.i]; });
     edgeMat.visible = state.edges;
     renderer.shadowMap.enabled = state.shadows;
     sun.castShadow = state.shadows;
@@ -494,7 +532,7 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
     sprites.forEach(function (sp) {
       var ci = IDX[sp.userData.cls], top = 0;
       if (!CLS[ci].fixed) {
-        DATA.polys.forEach(function (p, i) { if (p[0] === ci) top = Math.max(top, heightOf(i)); });
+        DATA.polys.forEach(function (p, i) { if (p[0] === ci && !del[i]) top = Math.max(top, heightOf(i)); });
         top *= state.ex;
       }
       sp.position.y = top + 5 * state.scale;
@@ -516,7 +554,7 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
   function placeNums() {
     nums.forEach(function (sp) {
       var i = sp.userData.i;
-      sp.visible = CLS[DATA.polys[i][0]].vis;
+      sp.visible = CLS[DATA.polys[i][0]].vis && !del[i];
       sp.position.y = heightOf(i) * state.ex + 3 * state.scale;
     });
   }
@@ -659,6 +697,10 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
       '<div class="ctl" style="margin:0"><label for="pk-h">Altura propia</label><output class="val" id="pk-v"></output>' +
       '<input type="range" id="pk-h" min="0" max="' + maxv + '" step="0.5" value="0"></div>' +
       '<div class="row2"><button class="btn" type="button" id="pk-m">− 1 piso</button><button class="btn" type="button" id="pk-p">+ 1 piso</button></div>' +
+      '<div class="row2"><label for="pk-col" style="font-weight:500">Color</label><input type="color" id="pk-col" style="width:2.6rem;height:2rem;padding:0;border:1px solid var(--line);background:none">' +
+      '<button class="btn" type="button" id="pk-colx">Color del uso</button></div>' +
+      '<div class="pickrow" style="margin:8px 0 0"><label for="pk-grp">Pasar a otro uso</label><select id="pk-grp"></select></div>' +
+      '<div class="row2"><button class="btn" type="button" id="pk-del">Eliminar bloque' + (sel.length > 1 ? 's' : '') + '</button></div>' +
       '<div class="row2">' + (one ? '<button class="btn" type="button" id="pk-same">Elegir todos los de este uso</button>' : '') +
       '<button class="btn" type="button" id="pk-reset">Volver al valor del uso</button>' +
       '<button class="btn" type="button" id="pk-clear">Soltar</button></div>';
@@ -670,6 +712,23 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
     document.getElementById('pk-p').addEventListener('click', function () { step(3); });
     document.getElementById('pk-reset').addEventListener('click', function () { sel.forEach(function (i) { delete over[i]; }); updateHeights(); });
     document.getElementById('pk-clear').addEventListener('click', function () { setSel([]); });
+    var colIn = document.getElementById('pk-col'), grpSel = document.getElementById('pk-grp');
+    colIn.value = colOv[sel[0]] || CLS[DATA.polys[sel[0]][0]].color;
+    colIn.addEventListener('input', function () { sel.forEach(function (i) { colOv[i] = colIn.value; }); applyColors(); persist(); });
+    document.getElementById('pk-colx').addEventListener('click', function () {
+      sel.forEach(function (i) { delete colOv[i]; }); applyColors(); colIn.value = CLS[DATA.polys[sel[0]][0]].color; persist();
+    });
+    grpSel.innerHTML = '<option value="">Elegí el uso…</option>' + CLS.map(function (c, k) { return '<option value="' + k + '">' + nameOf(c) + '</option>'; }).join('');
+    grpSel.addEventListener('change', function () {
+      if (grpSel.value === '') return;
+      var ci = parseInt(grpSel.value, 10), keep = sel.slice();
+      keep.forEach(function (i) { DATA.polys[i][0] = ci; delete over[i]; delete colOv[i]; });
+      recount(); build(); refreshCounts(); fillBlk(); setSel(keep); persist();
+    });
+    document.getElementById('pk-del').addEventListener('click', function () {
+      sel.forEach(function (i) { del[i] = 1; });
+      setSel([]); recount(); refreshCounts(); fillBlk(); applyVis(); updateHeights(); persist();
+    });
     var same = document.getElementById('pk-same');
     if (same) same.addEventListener('click', function () {
       var ci = DATA.polys[sel[0]][0], all = [];
@@ -711,6 +770,7 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
   document.getElementById('t-edge').addEventListener('change', function (e) { state.edges = e.target.checked; applyVis(); persist(); });
   document.getElementById('t-label').addEventListener('change', function (e) { state.labels = e.target.checked; applyVis(); persist(); });
   document.getElementById('t-num').addEventListener('change', function (e) { state.nums = e.target.checked; buildNums(); applyVis(); persist(); });
+  document.getElementById('restore').addEventListener('click', function () { del = {}; recount(); refreshCounts(); fillBlk(); applyVis(); updateHeights(); persist(); });
   document.getElementById('reseed').addEventListener('click', function () { state.seed = (state.seed * 48271) % 2147483647; reseed(); updateHeights(); });
 
   /* ---------- exportar imágenes ---------- */
@@ -800,6 +860,7 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
     if (s.cid !== CITYID) { if (window.__cityMismatch) window.__cityMismatch(); return; }
     over = {};
     Object.keys(s.over || {}).forEach(function (k) { var i = +k; if (DATA.polys[i] && typeof s.over[k] === 'number') over[i] = s.over[k]; });
+    var oldB = JSON.stringify(blkJson()); applyBlk(s); var blkChanged = JSON.stringify(blkJson()) !== oldB;
     CLS.forEach(function (c) {
       if (s.cur && typeof s.cur[c.id] === 'number') c.cur = s.cur[c.id];
       if (s.vis) c.vis = s.vis[c.id] !== false;
@@ -812,8 +873,8 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
       ['shadows', 'edges', 'labels', 'nums'].forEach(function (k) { if (typeof s.st[k] === 'boolean') state[k] = s.st[k]; });
     }
     syncControls();
-    if (state.scale !== oldScale || state.seed !== oldSeed) { build(); } else { applyVis(); }
-    updateHeights(); placeSun();
+    if (state.scale !== oldScale || state.seed !== oldSeed || blkChanged) { build(); } else { applyVis(); }
+    refreshCounts(); fillBlk(); updateHeights(); placeSun();
     if (sel.length) { var keep = sel.slice(); setSel([]); setSel(keep); }
   }
   (function connectShared() {
@@ -890,12 +951,21 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
     return fetch('/api/state?map=cc', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ json: JSON.stringify(city) }) })
       .then(function (r) { if (!r.ok) throw new Error('http'); });
   }
+  /* las ediciones llevan el id de la ciudad: si cambia (plano nuevo o eliminado), los demás se enteran por ahí */
+  function pushEdits(cid) {
+    return fetch('/api/state?map=c', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ json: JSON.stringify({ cid: cid, cur: {}, vis: {}, over: {}, st: {}, del: [], grp: {}, col: {} }) }) });
+  }
+  function adopt(rc) {
+    try { localStorage.removeItem('cargar-3d-v1'); if (rc.deleted) localStorage.removeItem(CITY_KEY); else store(rc); } catch (e) {}
+    location.reload();
+  }
   var checking = false;
   window.__cityMismatch = function () {
     if (checking) return; checking = true;
     fetchRemote().then(function (rc) {
       var loc = stored();
-      if (rc && (!loc || rc.id > loc.id)) { store(rc); try { localStorage.removeItem('cargar-3d-v1'); } catch (e) {} location.reload(); }
+      if (rc && (!loc || rc.id > loc.id)) adopt(rc);
     }).catch(function () {}).then(function () { setTimeout(function () { checking = false; }, 5000); });
   };
 
@@ -904,13 +974,13 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
     if (loc) {
       startViewer(loc);
       fetchRemote().then(function (rc) {
-        if (rc && rc.id > loc.id) { store(rc); try { localStorage.removeItem('cargar-3d-v1'); } catch (e) {} location.reload(); }
-        else if ((!rc || rc.id < loc.id)) pushRemote(loc).catch(function () {});
+        if (rc && rc.id > loc.id) adopt(rc);
+        else if (!rc || rc.id < loc.id) pushRemote(loc).catch(function () {});
       }).catch(function () {});
       return;
     }
     fetchRemote().then(function (rc) {
-      if (rc) { store(rc); startViewer(rc); } else showLoader(false);
+      if (rc && !rc.deleted) { store(rc); startViewer(rc); } else showLoader(false);
     }).catch(function () { showLoader(false); });
   }
 
@@ -1025,7 +1095,7 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
       if (size > 850000) { setMsg('El modelo es muy pesado para compartirlo (' + Math.round(size / 1000) + ' KB). Probá con una imagen más simple.', true); return; }
       store(city); try { localStorage.removeItem('cargar-3d-v1'); } catch (e) {}
       setMsg(v.polys.length + ' bloques detectados. Guardando para compartir…');
-      pushRemote(city).catch(function () {}).then(function () {
+      pushRemote(city).then(function () { return pushEdits(city.id); }).catch(function () {}).then(function () {
         if (started) location.reload(); else startViewer(city);
       });
     }, 30);
@@ -1033,6 +1103,18 @@ window.__start = function (DATA, CLS, LABELS, CITYID) {
   $('gen').addEventListener('click', generate);
   $('newplan').addEventListener('click', function () { showLoader(true); });
   $('cancel-new').addEventListener('click', function () { app.classList.remove('loading'); });
+
+  /* eliminar el plano: deja una "tumba" compartida para que nadie lo vuelva a subir desde su navegador */
+  $('delplan').addEventListener('click', function () { $('delplan').hidden = true; $('delconf').hidden = false; });
+  $('delno').addEventListener('click', function () { $('delplan').hidden = false; $('delconf').hidden = true; });
+  $('delyes').addEventListener('click', function () {
+    var tomb = { v: 1, id: Date.now().toString(36), deleted: true };
+    $('delyes').disabled = true;
+    pushRemote(tomb).then(function () { return pushEdits(tomb.id); }).catch(function () {}).then(function () {
+      try { localStorage.removeItem(CITY_KEY); localStorage.removeItem('cargar-3d-v1'); } catch (e) {}
+      location.reload();
+    });
+  });
 
   boot();
 })();

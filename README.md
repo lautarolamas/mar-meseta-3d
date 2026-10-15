@@ -29,3 +29,6 @@ Se configura en Vercel > Settings > Environment Variables (todas opcionales; se 
 | `RENDER_ORDER` | Orden de prueba, por defecto `gemini,stability,cf`. |
 
 Las cuotas gratuitas de cada proveedor cambian: conviene mirar sus páginas antes de depender de ellas.
+
+## Editar bloques y eliminar planos
+En las tres pestañas, al elegir uno o varios bloques (clic, Shift + clic o por número) se puede cambiarles el color, pasarlos a otro uso (grupo), eliminarlos y volver a restaurarlos. Todo se comparte en vivo. En **Mapa 3** además está "Eliminar este plano", que borra la ciudad cargada para los tres.
